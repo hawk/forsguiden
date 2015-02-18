@@ -14,7 +14,7 @@ Den anlitade ISP:n, Surftown (www.surftown.com), hade supit bort hela siten. Dat
 
 Som tur var hade Erik Wettergren sparat en privat kopia av själva databasen. Även om databasen var från 2012, så fanns där väldigt mycket kvar av de gamla forsbeskrivningarna. Dock utan bilder, videos etc.
 
-Därefter har Håkan Mattsson restaurerat databasen och lagt upp detta repository. Databasen finns incheckad som forsguiden.mdb och m h a scriptet `mdb2csv.py` exraherades dess tabeller till motsvarande csv-filer. Från csv-filerna genererades XML-filen `forsguiden.xml` m h a scriptet `csv2xml.escript`. Nu när detta är gjorts behöver det förhoppningsvis inte göras om igen.
+Därefter har Håkan Mattsson restaurerat databasen och lagt upp detta repository. Databasen finns incheckad som `forsguiden.mdb` och m h a scriptet `mdb2csv.py` exraherades dess tabeller till motsvarande csv-filer. Från csv-filerna genererades XML-filen `forsguiden.xml` m h a scriptet `csv2xml.escript`. Nu när detta är gjorts behöver det förhoppningsvis inte göras om igen.
 
 Editera forsguiden
 ------------------

@@ -6,10 +6,10 @@
 all: forsguiden.html
 
 csv: forsguiden.mdb
-	./mdb2csv.py
+	./bin/mdb2csv.py
 
 forsguiden.xml: csv
-	./csv2xml.escript
+	./bín/csv2xml.escript
 
 forsguiden.html:: forsguiden.xml
-	./xml2html.escript
+	./bin/xml2html.escript

@@ -412,7 +412,7 @@ name([H|T] = Name, Context) ->
             Name
     end.
 
-capitalize([H|T] = Name, Context) ->
+capitalize([H|T] = Name, _Context) ->
     if
         H >= $a, H =< $z ->
             [H - ($a-$A) | T];

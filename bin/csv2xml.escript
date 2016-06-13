@@ -7,7 +7,10 @@
 %%
 %% Generates an forsguiden.xml file from the .csv files
 %%
-%% csv2xml [OutFile]
+%%   csv2xml [-a [OutFile]]
+%%
+%% Options
+%%   -a      - Emits all data fields
 
 -module(csv2xml).
 -mode(compile).
@@ -15,12 +18,13 @@
 -define(ROW_DELIM, <<"§">>).
 -define(COL_DELIM, <<"^">>).
 
--record(opts, {indent = []}).
+-record(opts, {file = "forsguiden.xml",
+               emit_all = false,
+               indent = []}).
 
-main([]) ->
-    main(["forsguiden.xml"]);
-main([OutFile]) ->
-    Opts = #opts{},
+main(Args) ->
+    Opts = parse_args(Args, #opts{}),
+    OutFile = Opts#opts.file,
     {RiverHead, Rivers} = split_csv_file("river.csv"),
     Rapids = split_csv_file("rapid.csv"),
     Spots = split_csv_file("spot.csv"),
@@ -38,6 +42,19 @@ main([OutFile]) ->
         ],
     file:write_file(OutFile, Xml),
     io:format("done.\n", []).
+
+parse_args([H | T], Opts) ->
+    case H of
+        "-a" ->
+            parse_args(T, Opts#opts{emit_all = true});
+        "-" ++ _ ->
+            io:format("Illegal option: ~s\n", [H]),
+            halt(1);
+        File ->
+            parse_args(T, Opts#opts{file = File})
+    end;
+parse_args([], Opts) ->
+    Opts.
 
 split_csv_file(File0) ->
     File = filename:join(["csv", File0]),
@@ -176,7 +193,7 @@ emit_spot(Opts, SpotHead, Spot) ->
 
 emit_body(Opts, [Tag | Head], [Val0 | Vals], Transformers) ->
     Val = sanitize(Tag, Val0),
-    Transform = pre_transform(Tag, Val, Transformers),
+    Transform = lookup_transform(Tag, Val, Transformers),
     NewVal = eval_transform(Opts, Tag, Val, Transform),
     [
      NewVal,
@@ -185,7 +202,7 @@ emit_body(Opts, [Tag | Head], [Val0 | Vals], Transformers) ->
 emit_body(_Opts, [], [], _Transformers) ->
     [].
 
-pre_transform(Tag, Val, Transformers) ->
+lookup_transform(Tag, Val, Transformers) ->
     case lists:keyfind(Tag, 1, Transformers) of
         false                             -> keep;
         {_, skip}                         -> skip;
@@ -196,16 +213,26 @@ pre_transform(Tag, Val, Transformers) ->
 
 eval_transform(Opts, Tag, Val, Transform) ->
     case Transform of
-        skip                    -> [];
-        keep                    -> [tag(Opts, Tag, Val)];
-        {replace,NewTag,NewVal} -> [tag(Opts, NewTag, sanitize(Tag, NewVal))]
+        skip when Opts#opts.emit_all ->
+            eval_transform(Opts, Tag, Val, keep);
+        skip ->
+            [];
+        keep ->
+            [tag(Opts, Tag, Val)];
+        {replace,NewTag,NewVal} ->
+            [tag(Opts, NewTag, sanitize(Tag, NewVal))]
     end.
 
 indent(#opts{indent = Indent} = Opts) ->
     Opts#opts{indent = ["  " | Indent]}.
 
 tag(#opts{indent = Indent}, Tag, IoList) ->
-    [Indent, "<", Tag, ">", IoList, "</", Tag, ">", "\n"].
+    case iolist_to_binary(IoList) of
+        <<>> ->
+            [Indent, "<", Tag, "/>\n"];
+        Bin ->
+            [Indent, "<", Tag, ">", Bin, "</", Tag, ">", "\n"]
+    end.
 
 start_tag(#opts{indent = Indent}, Tag) ->
     [Indent, "<", Tag, ">\n"].
@@ -277,27 +304,18 @@ sanitize(_Tag, IoList) ->
          {<<"<br>">>, <<"\n">>},
          {<<"\r\n">>, <<"\n">>},
          {<<" +">>, <<" ">>},
-         {<<"\n+">>, <<"\n\n">>}
+         {<<"\n\n+">>, <<"\n\n">>},
+         {<<"^[ \n]+">>, <<"">>},
+         {<<"[ \n]+$">>, <<"">>},
+         {<<"^\\?$ ">>, <<"">>}
         ],
-    Fun =
-        fun({RegExp, With}, From) ->
-                re:replace(From, RegExp, With,
-                                [global, {return, binary}])
-        end,
+    Opts = [global, {return, binary}],
+    Fun = fun({RegExp, With}, From) -> re:replace(From, RegExp, With, Opts) end,
     Bin = lists:foldl(Fun, iolist_to_binary(IoList), Map),
-    Chopped = chop(Bin),
-    case re:run(Chopped, <<"[\\<|&]">>, [unicode]) of
+    case re:run(Bin, <<"[\\<|&]">>, [unicode]) of
         nomatch    -> Bin;
-        {match, _} -> <<"<![CDATA[", Chopped/binary, "]]>">>
+        {match, _} -> <<"<![CDATA[", Bin/binary, "]]>">>
     end.
-
-chop(Bin) ->
-    Sz = byte_size(Bin) - 2,
-    case Bin of
-        <<Chopped:Sz/binary, "\n\n">> -> ok;
-        Chopped                       -> ok
-    end,
-    Chopped.
 
 swe_time(<<Day:2/binary,"/",Mon:2/binary,"/",Year:2/binary,Rest/binary>>) ->
     swe_time(<<Year/binary,"-",Mon/binary,"-",Day/binary,Rest/binary>>);

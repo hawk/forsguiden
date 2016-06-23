@@ -140,7 +140,7 @@ emit_district({district, District}, DistrictsContext) ->
     Links = [["<a href=\"#", Name, "\">", Name, "</a> "] || Name <- Sorted],
     [
      "    <tr>\n",
-     "      <td>", "<a href=\"#", DN, "\">", DN, "</a> ", "</td>",
+     "      <td>", "<a href=\"#", DN, "\">", DN, "</a> ", "</td>\n",
      "      <td>", Links, "</td>\n",
      "    </tr>\n"
     ].
@@ -178,11 +178,10 @@ emit_river_header({header, DistrictName, RiverName, River, RiverContext},
     RN = emit(RiverName),
     DN = emit(DistrictName),
     [
-     "    <tr>",
+     "    <tr>\n",
      "      <td><a href=\"#", RN, "\">", RN, "</a></td>\n",
      "      <td><a href=\"#", DN, "\">", DN, "</a></td>\n",
-     "      <td>", GradeSpan,
-     "</td>\n",
+     "      <td>", GradeSpan, "</td>\n",
      "      <td>", Links, "</td>\n",
      "    </tr>\n"
     ].

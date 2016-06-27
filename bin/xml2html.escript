@@ -1,6 +1,6 @@
 #!/usr/bin/env escript
 
-%% Copyright 2015 Hakan Mattsson
+%% Copyright 2015-2016 Hakan Mattsson
 %%
 %% See the file "LICENSE" for information on usage and redistribution
 %% of this file, and for a DISCLAIMER OF ALL WARRANTIES.
@@ -16,10 +16,10 @@
 
 -define(UNICODE(Chars), unicode:characters_to_binary(Chars, unicode)).
 -define(PICK(Key, List, Context), pick(Key, List, Context, ?LINE)).
--define(NAME(Key, List, Context),
-        name(?PICK(Key, List, Context), Context)).
+-define(NAME(Opts, Key, List, Context),
+        name(Opts, ?PICK(Key, List, Context), Context)).
 
--record(opts, {is_verbose = false, infile, outfile}).
+-record(opts, {is_verbose = false, no_warnings = false, infile, outfile}).
 
 main(Args) ->
     Opts = #opts{infile = InFile, outfile = OutFile} =
@@ -31,11 +31,11 @@ main(Args) ->
         FileContext = [InFile, file],
         Html =
             [
-             emit_html_header("Forsguiden Sverige"),
-             emit_all_districts(Districts, FileContext),
-             emit_river_headers(Districts, FileContext),
+             emit_html_header(Opts, "Forsguiden Sverige"),
+             emit_district_table(Opts, Districts, FileContext),
+             emit_river_table(Opts, Districts, FileContext),
              emit_districts(Opts, Districts, FileContext),
-             emit_html_footer()
+             emit_html_footer(Opts)
             ],
         io:format("Generating file://~s\n", [filename:absname(OutFile)]),
         {ok, OutFile} = {file:write_file(OutFile, Html), OutFile}
@@ -49,6 +49,8 @@ parse_args([H|T], Opts) ->
     case H of
         "-v" ->
             parse_args(T, Opts#opts{is_verbose = true});
+        "-nw" ->
+            parse_args(T, Opts#opts{no_warnings = true});
         File when Opts#opts.infile =:= undefined ->
             parse_args(T, Opts#opts{infile = File});
         File when Opts#opts.outfile =:= undefined ->
@@ -92,7 +94,7 @@ strip([Char |Text], TAcc, SAcc) ->
 strip([], TAcc, _SAcc) ->
     lists:reverse(TAcc).
 
-emit_html_header(Title) ->
+emit_html_header(Opts, Title) ->
     Url = "http://www.unsponsored.co.uk/press/?p=1168",
     [
      <<"<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\" "
@@ -103,36 +105,37 @@ emit_html_header(Title) ->
      <<"  <title>">>, Title, <<"</title>\n">>,
      <<"</head>\n\n">>,
      <<"<body>\n">>,
-     "  ", tag("h1", Title),
-     "  ", emit("Graderingssystemet i Forsguiden finns beskrivet "),
-     "<a href=\"", Url, "\">", emit("här"), "</a>\n"
+     "  ", tag(Opts, "h1", Title),
+     "  ", emit(Opts, "Graderingssystemet i Forsguiden finns beskrivet "),
+     "<a href=\"", Url, "\">", emit(Opts, "här"), "</a>\n"
     ].
 
-emit_html_footer() ->
-    {{Year,Mon,Day},{Hour,Min,Sec}} = calendar:now_to_local_time(erlang:now()),
+emit_html_footer(Opts) ->
+    {{Year,Mon,Day},{Hour,Min,Sec}} =
+        calendar:now_to_local_time(erlang:timestamp()),
     [
-     tag("h3", ["Genererad ",
+     tag(Opts, "h3", ["Genererad ",
                 lists:concat([Year, "-", Mon, "-", Day," ",
                               Hour, ":", Min, ":", Sec])]),
      <<"</body>\n">>
     ].
 
-emit_all_districts({districts, Districts}, FileContext) ->
+emit_district_table(Opts, {districts, Districts}, FileContext) ->
     [
-     "  ", tag("h1", ["Alla distrikt"]),
+     "  ", tag(Opts, "h1", ["Alla distrikt"]),
      "  <table border=1>\n",
-     [emit_district(District, [districts | FileContext]) ||
+     [emit_district_row(Opts, District, [districts | FileContext]) ||
          District <- Districts],
      "  </table>\n\n"
     ].
 
-emit_district({district, District}, DistrictsContext) ->
+emit_district_row(Opts, {district, District}, DistrictsContext) ->
     DistrictContext0 = [district | DistrictsContext],
-    DistrictName = ?NAME(districtname, District, DistrictContext0),
-    DN = emit(DistrictName),
+    DistrictName = ?NAME(Opts, districtname, District, DistrictContext0),
+    DN = emit(Opts, DistrictName),
     DistrictContext = [DN | DistrictContext0],
     Names =
-        [emit(?PICK(rivername, River,
+        [emit(Opts, ?PICK(rivername, River,
                     [river, rivers | DistrictContext])) ||
             {rivers, Rivers} <- District,
             {river, River} <- Rivers],
@@ -145,38 +148,38 @@ emit_district({district, District}, DistrictsContext) ->
      "    </tr>\n"
     ].
 
-emit_river_headers({districts, Districts}, FileContext) ->
+emit_river_table(Opts, {districts, Districts}, FileContext) ->
     DistrictsContext = [districts | FileContext],
     Headers =
-        [header(River, District, DistrictsContext) ||
+        [pick_header(Opts, River, District, DistrictsContext) ||
             {district, District} <- Districts,
             {rivers, Rivers} <- District,
             {river, River} <- Rivers],
     Sorted = lists:keysort(3, Headers),
     [
-     "  ", tag("h1", "A-Ö"),
+     "  ", tag(Opts, "h1", "A-Ö"),
      "  <table border=1>\n",
-     [emit_river_header(Header, DistrictsContext) || Header <- Sorted],
+     [emit_river_header(Opts, Header, DistrictsContext) || Header <- Sorted],
      "  </table>\n\n",
      "  <p/>\n"
     ].
 
-emit_river_header({header, DistrictName, RiverName, River, RiverContext},
+emit_river_header(Opts, {header, DistrictName, RiverName, River, RiverContext},
                    _DistrictsContext) ->
     Href =
         fun(RapidName) ->
-                N = rapid_name(RiverName, RapidName),
-                ["<a href=\"#", N,  "\">", emit(RapidName), "</a>"]
+                N = rapid_name(Opts, RiverName, RapidName),
+                ["<a href=\"#", N,  "\">", emit(Opts, RapidName), "</a>"]
         end,
     Rapids = ?PICK(rapids, River, RiverContext),
     GradeSpan = ?PICK(gradespan, River, RiverContext),
     RapidNames =
-        [?NAME(rapidname, Rapid, [rapid, rapids | RiverContext]) ||
+        [?NAME(Opts, rapidname, Rapid, [rapid, rapids | RiverContext]) ||
             {rapid, Rapid} <- Rapids],
     Sorted = lists:sort(RapidNames),
     Links = [[Href(RapidName), " "] || RapidName <- Sorted],
-    RN = emit(RiverName),
-    DN = emit(DistrictName),
+    RN = emit(Opts, RiverName),
+    DN = emit(Opts, DistrictName),
     [
      "    <tr>\n",
      "      <td><a href=\"#", RN, "\">", RN, "</a></td>\n",
@@ -186,18 +189,16 @@ emit_river_header({header, DistrictName, RiverName, River, RiverContext},
      "    </tr>\n"
     ].
 
-rapid_name(RiverName, RapidName) ->
-    emit([RiverName, "_", RapidName]).
+rapid_name(Opts, RiverName, RapidName) ->
+    emit(Opts, [RiverName, "_", RapidName]).
 
-header(River, District, DistrictsContext) ->
+pick_header(Opts, River, District, DistrictsContext) ->
     DistrictContext0 = [district | DistrictsContext],
-    DistrictName =
-        ?NAME(districtname, District, DistrictContext0),
-    DN = emit(DistrictName),
+    DistrictName = ?NAME(Opts, districtname, District, DistrictContext0),
+    DN = emit(Opts, DistrictName),
     RiverContext0 = [river, rivers, DN | DistrictContext0],
-    RiverName =
-        ?NAME(rivername, River, RiverContext0),
-    RN = emit(RiverName),
+    RiverName = ?NAME(Opts, rivername, River, RiverContext0),
+    RN = emit(Opts, RiverName),
     {header, DistrictName, RiverName, River, [RN | RiverContext0]}.
 
 emit_districts(Opts, {districts, Districts}, FileContext) ->
@@ -207,19 +208,20 @@ emit_districts(Opts, {districts, Districts}, FileContext) ->
 emit_district(Opts, {district, District}, DistrictsContext) ->
     DistrictContext0 = [district | DistrictsContext],
     DistrictName = ?PICK(districtname, District, DistrictContext0),
-    DN = emit(DistrictName),
+    DN = emit(Opts, DistrictName),
     DistrictContext = [DN | DistrictContext0],
     Rivers = ?PICK(rivers, District, DistrictContext),
     verbose(Opts, "~s\n", [DN]),
     Headers =
-        [header(River, District, DistrictsContext) || {river, River} <- Rivers],
+        [pick_header(Opts, River, District, DistrictsContext) ||
+            {river, River} <- Rivers],
     Sorted = lists:keysort(3, Headers),
     RiverContext0 = [river, rivers | DistrictContext],
     [
      "  <a name=\"", DN, "\">\n",
-     "  ", tag("h1", emit("Distrikt " ++ DistrictName)),
+     "  ", tag(Opts, "h1", emit(Opts, "Distrikt " ++ DistrictName)),
      "  <table border=1>\n",
-     [emit_river_header(Header, DistrictsContext) || Header <- Sorted],
+     [emit_river_header(Opts, Header, DistrictsContext) || Header <- Sorted],
      "  </table>\n\n",
      "  <p/>\n"
      "  <hr/>\n",
@@ -229,11 +231,11 @@ emit_district(Opts, {district, District}, DistrictsContext) ->
     ].
 
 emit_river(Opts, DistrictName, {river, River}, RiverContext0) ->
-    RiverName = ?NAME(rivername, River, RiverContext0),
-    RiverContext = [emit(RiverName) | RiverContext0],
-    RN = emit(RiverName),
+    RiverName = ?NAME(Opts, rivername, River, RiverContext0),
+    RiverContext = [emit(Opts, RiverName) | RiverContext0],
+    RN = emit(Opts, RiverName),
     GradeSpan = ?PICK(gradespan, River, RiverContext),
-    AltName = altname(?PICK(altname, River, RiverContext), RiverContext),
+    AltName = altname(Opts, ?PICK(altname, River, RiverContext), RiverContext),
     PrimeSeason = ?PICK(primeseason, River, RiverContext),
     Season = ?PICK(season, River, RiverContext),
     Source = ?PICK(source, River, RiverContext),
@@ -243,52 +245,54 @@ emit_river(Opts, DistrictName, {river, River}, RiverContext0) ->
     WhereToStay = ?PICK(wheretostay, River, RiverContext),
     Rapids = ?PICK(rapids, River, RiverContext),
     RapidContext0 = [rapid, rapids, RN | RiverContext],
-    verbose(Opts, "\t~s - ~s\n", [RN, emit(GradeSpan)]),
-    DN = emit(DistrictName),
+    verbose(Opts, "\t~s - ~s\n", [RN, emit(Opts, GradeSpan)]),
+    DN = emit(Opts, DistrictName),
     [
      "\n",
      "  <a name=\"", RN, "\">\n",
-     "  ", tag("h1",
+     "  ", tag(Opts, "h1",
                [RN,
                 opt(" (", AltName, ")"),
                 " i " , "<a href=\"#", DN, "\">", DN, "</a>",
-                " - ", emit(GradeSpan)]),
+                " - ", emit(Opts, GradeSpan)]),
      "  <table border=1>\n",
-     emit_river_row("Svårighetsgrad", GradeSpan),
-     emit_river_row("Säsong", [PrimeSeason, opt(" (", emit(Season), ")")]),
-     emit_river_prop(bigwater, River, RiverContext),
-     emit_river_prop(creeking, River, RiverContext),
-     emit_river_prop(freestyle, River, RiverContext),
-     emit_river_prop(rookie, River, RiverContext),
-     emit_river_prop(slalom, River, RiverContext),
-     emit_river_prop(riverrunning, River, RiverContext),
-     emit_river_row("Källa", [Source, opt(" (senast ändrad ", LastUpdated, ")")]),
+     emit_river_row(Opts, "Svårighetsgrad", GradeSpan),
+     emit_river_row(Opts, "Säsong", [PrimeSeason,
+                                     opt(" (", emit(Opts, Season), ")")]),
+     emit_river_prop(Opts, bigwater, River, RiverContext),
+     emit_river_prop(Opts, creeking, River, RiverContext),
+     emit_river_prop(Opts, freestyle, River, RiverContext),
+     emit_river_prop(Opts, rookie, River, RiverContext),
+     emit_river_prop(Opts, slalom, River, RiverContext),
+     emit_river_prop(Opts, riverrunning, River, RiverContext),
+     emit_river_row(Opts, "Källa",
+                    [Source, opt(" (senast ändrad ", LastUpdated, ")")]),
      "  </table>\n",
      "  <p/>\n",
-     emit(Description),
+     emit(Opts, Description),
      " <p/>",
-     opt(emit("Hitta hit: "), emit(HowToFind), "\n<p/>"),
-     opt(emit("Boende: "), emit(WhereToStay), "\n<p/>"),
+     opt(emit(Opts, "Hitta hit: "), emit(Opts, HowToFind), "\n<p/>"),
+     opt(emit(Opts, "Boende: "), emit(Opts, WhereToStay), "\n<p/>"),
      [emit_rapid(Opts, RiverName, Rapid, RapidContext0) || Rapid <- Rapids],
      "  <hr/>\n"
     ].
 
-emit_river_prop(Tag, River, RiverContext) ->
+emit_river_prop(Opts, Tag, River, RiverContext) ->
     Val = ?PICK(Tag, River, RiverContext),
     Label = capitalize(atom_to_list(Tag), RiverContext),
-    emit_river_row(Label, Val).
+    emit_river_row(Opts, Label, Val).
 
-emit_river_row(Label, Val) ->
+emit_river_row(Opts, Label, Val) ->
      [
       "    <tr>\n",
-      "      <td>", emit(Label), "</td>\n",
-      "      <td>", emit(Val), "</td>\n",
+      "      <td>", emit(Opts, Label), "</td>\n",
+      "      <td>", emit(Opts, Val), "</td>\n",
       "    </tr>\n"
      ].
 
 emit_rapid(Opts, RiverName, {rapid, Rapid}, RapidContext0) ->
-    RapidName = ?NAME(rapidname, Rapid, RapidContext0),
-    RapidContext = [emit(RapidName) | RapidContext0],
+    RapidName = ?NAME(Opts, rapidname, Rapid, RapidContext0),
+    RapidContext = [emit(Opts, RapidName) | RapidContext0],
     Grade = ?PICK(grade, Rapid, RapidContext),
     AvgGradient = ?PICK(avggradient, Rapid, RapidContext),
     Description = ?PICK(description, Rapid, RapidContext),
@@ -298,30 +302,31 @@ emit_rapid(Opts, RiverName, {rapid, Rapid}, RapidContext0) ->
     Spots = ?PICK(spots, Rapid, RapidContext),
     SpotContext0 = [spot, spots | RapidContext],
     verbose(Opts,
-            "\t\t~s - ~s\n", [emit(RapidName), emit(Grade)]),
+            "\t\t~s - ~s\n", [emit(Opts, RapidName), emit(Opts, Grade)]),
     [
-     "  <a name=\"", rapid_name(RiverName, RapidName), "\">\n",
+     "  <a name=\"", rapid_name(Opts, RiverName, RapidName), "\">\n",
 
-     "  ", tag("h2", [RapidName, " - ", Grade,
+     "  ", tag(Opts, "h2", [RapidName, " - ", Grade,
                       opt(" (lutning ", AvgGradient, ")")]),
-     emit(Description),
+     emit(Opts, Description),
      "  <p/>",
-     opt("<font color=\"red\"><b>Faror: ", emit(Dangers), "</b></font>\n<p/>"),
-     opt("Hitta hit: ", emit(HowToFind), "\n<p/>"),
-     opt("First descent: ", emit(FirstDescent), "\n<p/>"),
+     opt("<font color=\"red\"><b>Faror: ",
+         emit(Opts, Dangers), "</b></font>\n<p/>"),
+     opt("Hitta hit: ", emit(Opts, HowToFind), "\n<p/>"),
+     opt("First descent: ", emit(Opts, FirstDescent), "\n<p/>"),
      [emit_spot(Opts, Spot, SpotContext0) || Spot <- Spots]
     ].
 
 emit_spot(Opts, {spot, Spot}, SpotContext0) ->
-    SpotName= ?NAME(spotname, Spot, SpotContext0),
-    SN = emit(SpotName),
+    SpotName= ?NAME(Opts, spotname, Spot, SpotContext0),
+    SN = emit(Opts, SpotName),
     SpotContext = [SN | SpotContext0],
     Description= ?PICK(description, Spot, SpotContext),
     verbose(Opts, "\t\t\t~s\n", [SN]),
     [
-     "  ", tag("h3", SpotName),
+     "  ", tag(Opts, "h3", SpotName),
      "  <p/>\n",
-     emit(Description)
+     emit(Opts, Description)
     ].
 
 opt(_Before, "", _After) ->
@@ -331,23 +336,24 @@ opt(_Before, <<>>, _After) ->
 opt(Before, IoList, After) ->
     [Before, IoList, After].
 
-tag(Tag, IoList) ->
-    ["<", Tag, ">", emit(IoList), "</", Tag, ">", "\n"].
+tag(Opts, Tag, IoList) ->
+    ["<", Tag, ">", emit(Opts, IoList), "</", Tag, ">", "\n"].
 
-emit(IoList) when is_list(IoList) ->
-    emit(?UNICODE(IoList));
-emit(Bin) when is_binary(Bin) ->
+emit(Opts, IoList) when is_list(IoList) ->
+    emit(Opts, ?UNICODE(IoList));
+emit(Opts, Bin) when is_binary(Bin) ->
     case strip([B || B <- binary:split(Bin, <<"\n">>, [global])]) of
         [] ->
             [];
         [Single] ->
-            do_emit(Single);
+            do_emit(Opts, Single);
         [First | Rest] ->
-            IoList = [do_emit(First) | [["\n", do_emit(R)] || R <- Rest]],
+            IoList = [do_emit(Opts, First) |
+                      [["\n", do_emit(Opts, R)] || R <- Rest]],
             ?UNICODE(IoList)
     end.
 
-do_emit(Bin) ->
+do_emit(_Opts, Bin) ->
     Replace =
         fun({From, To}, Acc) ->
                 Acc2 = binary:replace(Acc, ?UNICODE(From), To, [global]),
@@ -371,7 +377,7 @@ map() ->
 %%   {"Ä", <<"&Auml;">>},
 %%   {"ö", <<"&ouml;">>},
 %%   {"Ö", <<"&Ouml;">>},
-     {"\r", <<"\n">>},
+     {"\r\n", <<"\n">>},
      {"\n+", <<"\n">>},
      {"\n", <<"<p/>">>},
      {" +$", <<"">>}
@@ -387,25 +393,30 @@ pick(Tag, List, Context, Line) ->
             halt(3)
     end.
 
-altname("", _Context) ->
+altname(_Opts, "", _Context) ->
     "";
-altname(Name, Context) ->
-    name(Name, Context).
+altname(Opts, Name, Context) ->
+    name(Opts, Name, Context).
 
-name("", Context) ->
-    io:format("WARNING: Missing name\n\t ~p\n", [Context]),
+warning(#opts{no_warnings=true}, _Format, _Args) ->
+    ok;
+warning(#opts{no_warnings=false}, Format, Args) ->
+    io:format("WARNING: " ++ Format ++ "\n", Args).
+
+name(Opts, "", Context) ->
+    warning(Opts, "Missing name\n\t ~p", [Context]),
     "";
-name([H|T] = Name, Context) ->
+name(Opts, [H|T] = Name, Context) ->
     if
         H >= $a, H =< $z ->
             Name2 = [H - ($a-$A) | T],
-            io:format("WARNING: Capitalize \"~s\" -> \"~s\"\n\t~p\n",
-                      [emit(Name), emit(Name2), Context]),
+            warning(Opts, "Capitalize \"~s\" -> \"~s\"\n\t~p",
+                      [emit(Opts, Name), emit(Opts, Name2), Context]),
             Name2;
         H >= $å, H =< $ö ->
             Name2 = [H - ($å-$å) | T],
-            io:format("WARNING: Capitalize ~s -> ~s\n\t~p\n",
-                      [emit(Name), emit(Name2)], Context),
+            warning(Opts, "Capitalize ~s -> ~s\n\t~p",
+                    [emit(Opts, Name), emit(Opts, Name2), Context]),
             Name2;
         true ->
             Name

@@ -1,6 +1,6 @@
 #!/usr/bin/env escript
 
-%% Copyright 2015 Hakan Mattsson
+%% Copyright 2015-2016 Hakan Mattsson
 %%
 %% See the file "LICENSE" for information on usage and redistribution
 %% of this file, and for a DISCLAIMER OF ALL WARRANTIES.
@@ -302,6 +302,12 @@ sanitize(_Tag, IoList) ->
          {<<"<p>">>, <<"\n">>},
          {<<"</p>">>, <<"\n">>},
          {<<"<br>">>, <<"\n">>},
+         {<<"^<BR>">>, <<"">>},
+         {<<"<B>">>, <<"">>},
+         {<<"</B>">>, <<"">>},
+         {<<"<b>">>, <<"">>},
+         {<<"</b>">>, <<"">>},
+         {<<"<BR>">>, <<"\n">>},
          {<<"\r\n">>, <<"\n">>},
          {<<"\n\n+">>, <<"\n\n">>},
          {<<"^[ \n]+">>, <<"">>},

@@ -93,14 +93,18 @@ emit_river(Opts, RiverHead, River, {RapidHead, Rapids}, Spots) ->
     RiverId = pick(<<"id">>, RiverHead, River),
     LocalRapids =
         [Rapid || Rapid <- Rapids,
-                  is_equal(RiverId, <<"riverid">>, RapidHead, Rapid)],
+                  is_equal(RiverId, <<"riverid">>, RapidHead, Rapid),
+                  not is_empty_rapid(RapidHead, Rapid)],
     Sorted = sort(<<"seqnumber">>, RapidHead, LocalRapids),
     Opts2 = indent(Opts),
     Opts3 = indent(Opts2),
+    Context = {<<"rivername">>, RiverHead, RiverHead},
+    GradeSpan = fun(T, V) -> {replace, T, gradespan(Context, V)} end,
     Transformers =
         [
          {<<"id">>,              skip},
          {<<"district">>,        skip},
+         {<<"gradespan">>,       GradeSpan},
          {<<"miscinfo">>,        skip},
          {<<"maptofind">>,       skip},
          {<<"eniro">>,           skip},
@@ -129,17 +133,25 @@ activity(_Tag, AltTag, <<"1">>) ->
 activity(_Tag, AltTag, <<"0">>) ->
     {replace, AltTag, <<"Nej">>}.
 
+is_empty_rapid(RapidHead, Rapid) ->
+    is_equal(<<>>, <<"rapidname">>, RapidHead, Rapid) andalso
+    is_equal(<<>>, <<"description">>, RapidHead, Rapid).
+
 emit_rapid(Opts, RapidHead, Rapid, {SpotHead, Spots}) ->
     RapidId = pick(<<"id">>, RapidHead, Rapid),
     LocalSpots =
         [Spot || Spot <- Spots,
-                 is_equal(RapidId, <<"rapidid">>, SpotHead, Spot)],
+                 is_equal(RapidId, <<"rapidid">>, SpotHead, Spot),
+                 not is_empty_spot(SpotHead, Spot)],
     Opts2 = indent(Opts),
     Opts3 = indent(Opts2),
+    Context = {<<"rapidname">>, RapidHead, Rapid},
+    GradeSpan = fun(T, V) -> {replace, T, gradespan(Context, V)} end,
     Transformers =
         [
          {<<"id">>,              skip},
          {<<"riverid">>,         skip},
+         {<<"grade">>,           GradeSpan},
          {<<"nbrofvotes">>,      skip},
          {<<"seqnumber">>,       skip},
          {<<"eniro">>,           skip},
@@ -161,6 +173,10 @@ emit_rapid(Opts, RapidHead, Rapid, {SpotHead, Spots}) ->
      end_tag(Opts2, "spots"),
      end_tag(Opts, "rapid")
     ].
+
+is_empty_spot(SpotHead, Spot) ->
+    is_equal(<<>>, <<"spotname">>, SpotHead, Spot) andalso
+    is_equal(<<>>, <<"description">>, SpotHead, Spot).
 
 emit_spot(Opts, SpotHead, Spot) ->
     Opts2 = indent(Opts),
@@ -275,6 +291,9 @@ is_equal(Key, Tag, Head, Row) ->
     Val = pick(Tag, Head, Row),
     Key =:= Val.
 
+%% pick({Tag, Head, Row} = _Context) ->
+%%     pick(Tag, Head, Row).
+
 pick(Tag, Head, Row) ->
     Pos = pos(Tag, Head),
     lists:nth(Pos, Row).
@@ -298,29 +317,48 @@ sanitize(_Tag, IoList) ->
         [
          {<<"allowfullscreen>">>, <<"allowfullscreen=\"true\">">>},
          {<<"berg&dalbana">>, <<"berg- och dalbana">>},
+         {<<"&ndash;">>, <<"-">>},
          {<<"& ">>, <<"och ">>},
+         {<<"&hl=en">>, <<"">>},
+         {<<"&hl=sv">>, <<"">>},
+         {<<"&fs=1">>, <<"">>},
+         fun unobjectify/1,
+         fun extract_href/1,
+         fun extract_img/1,
+         fun extract_iframe/1,
+         {<<"^\\-+$">>, <<"">>},
+         {<<"^\\?+$">>, <<"">>},
          {<<"<p>">>, <<"\n">>},
+         {<<"<p/>">>, <<"\n">>},
          {<<"</p>">>, <<"\n">>},
          {<<"<br>">>, <<"\n">>},
-         {<<"^<BR>">>, <<"">>},
-         {<<"<B>">>, <<"">>},
-         {<<"</B>">>, <<"">>},
+         {<<"<BR>">>, <<"">>},
+         {<<"<i>">>, <<"">>},
+         {<<"</i>">>, <<"">>},
+         {<<"<I>">>, <<"">>},
+         {<<"</I>">>, <<"">>},
          {<<"<b>">>, <<"">>},
          {<<"</b>">>, <<"">>},
-         {<<"<BR>">>, <<"\n">>},
+         {<<"<B>">>, <<"">>},
+         {<<"</B>">>, <<"">>},
          {<<"\r\n">>, <<"\n">>},
          {<<"\n\n+">>, <<"\n\n">>},
-         {<<"^[ \n]+">>, <<"">>},
-         {<<"[ \n]+$">>, <<"">>},
-         {<<" +">>, <<" ">>},
-         {<<"^\\?+$">>, <<"">>}
+         {<<"^[ \t\n]+">>, <<"">>},
+         {<<"[ \t\n]+$">>, <<"">>},
+         {<<"[ \t]+">>, <<" ">>},
+         fun capitalize/1
         ],
     Opts = [global, {return, binary}],
-    Fun = fun({RegExp, With}, From) -> re:replace(From, RegExp, With, Opts) end,
+    Fun = fun({RegExp, With}, From) -> re:replace(From, RegExp, With, Opts);
+             (F, From) when is_function(F, 1) -> F(From)
+          end,
     Bin = lists:foldl(Fun, iolist_to_binary(IoList), Map),
-    case re:run(Bin, <<"[\\<|&]">>, [unicode]) of
-        nomatch    -> Bin;
-        {match, _} -> <<"<![CDATA[", Bin/binary, "]]>">>
+    case re:run(Bin, <<"[\\<&]">>, [unicode]) of
+        nomatch    ->
+            Bin;
+        {match, _} ->
+            %% io:format("CDATA ~tp\n\n", [Bin]),
+            <<"<![CDATA[", Bin/binary, "]]>">>
     end.
 
 swe_time(<<Day:2/binary,"/",Mon:2/binary,"/",Year:2/binary,Rest/binary>>) ->
@@ -336,4 +374,180 @@ swe_year(Year) ->
     if
         IntYear > 50 -> <<"19", Year/binary>>;
         true         -> <<"20", Year/binary>>
+    end.
+
+gradespan(Context, GradeSpan) when is_binary(GradeSpan) ->
+    gradespan(Context, binary_to_list(GradeSpan));
+gradespan(Context, GradeSpan) ->
+    case string:tokens([G || G <- GradeSpan, G =/= $\ ], "-") of
+        [From, To] ->
+            [grade(Context, From), "-", grade(Context, To)];
+        [Grade] ->
+            grade(Context, Grade);
+        [] ->
+            grade(Context, "")
+    end.
+
+grade(Context, Grade) when is_binary(Grade) ->
+    grade(Context, binary_to_list(Grade));
+grade(Context, Grade) ->
+    case string:tokens([G || G <- Grade, G =/= $\ ], ".") of
+        [Difficulty, Danger, Sos] ->
+            emit_grade(grade(Context, difficulty, Difficulty),
+                       grade(Context, danger, Danger),
+                       grade(Context, sos, Sos));
+        [Difficulty, DangerSos] ->
+            IsInt = fun(C) -> C >= $0 andalso C =< $9 end,
+            {Danger, Sos} = lists:splitwith(IsInt, DangerSos),
+            emit_grade(grade(Context, difficulty, Difficulty),
+                       grade(Context, danger, Danger),
+                       grade(Context, sos, Sos));
+        [Difficulty] ->
+            emit_grade(grade(Context, difficulty, Difficulty),
+                       grade(Context, danger, ""),
+                       grade(Context, sos, ""));
+        [] ->
+            emit_grade(grade(Context, difficulty, ""),
+                       grade(Context, danger, ""),
+                       grade(Context, sos, ""))
+    end.
+
+grade(_Context, _, "") ->
+    %% ContextName = pick(Context),
+    %% io:format("MISSING GRADE ~p\n", [ContextName]),
+    "";
+grade(Context, difficulty, Grade) ->
+    grade(Context, ["1","2","3","4","5","6"], "6", Grade);
+grade(Context, danger, Grade) ->
+    grade(Context, ["1","2","3","4","5","6"], "6", Grade);
+grade(Context, sos, Grade) ->
+    grade(Context, ["A","B","C"], "", to_upper(Grade)).
+
+grade(_Context, ValidVals, Default, Val) when is_list(Val) ->
+    case lists:member(Val, ValidVals) of
+        true ->
+            Val;
+        false ->
+            %% ContextName = pick(Context),
+            %% io:format("BAD GRADE ~p ~s\n", [ContextName, Val]),
+            Default
+    end.
+
+emit_grade(Difficulty, Danger, Sos) ->
+    if
+        Difficulty =:= "" ->
+            "";
+        Danger =:= "" ->
+            Difficulty;
+        Sos =:= "" ->
+            [Difficulty, ".", Danger];
+        true ->
+            [Difficulty, ".", Danger, Sos]
+    end.
+
+to_upper(Bin) when is_binary(Bin) ->
+    list_to_binary(to_upper(binary_to_list(Bin)));
+to_upper(Char) when is_integer(Char) ->
+    if
+        Char >= $a, Char =< $z ->
+            Char - ($a-$A);
+        Char >= $å, Char =< $ö ->
+            Char - ($å-$Å);
+        true ->
+            Char
+    end;
+to_upper(List) when is_list(List) ->
+    lists:map(fun to_upper/1, List).
+
+capitalize(Bin) when is_binary(Bin) ->
+    list_to_binary(capitalize(binary_to_list(Bin)));
+capitalize("http" ++_ = List) ->
+    List;
+capitalize([H|T]) ->
+    [to_upper(H) | T];
+capitalize([]) ->
+    [].
+
+unobjectify(Bin) ->
+    case binary:split(Bin, <<"<object">>, [global]) of
+        [_] ->
+            Bin;
+        [First | Objs] ->
+            iolist_to_binary([First | lists:map(fun obj/1, Objs)])
+    end.
+
+obj(Obj) ->
+    case binary:split(Obj, <<"</object>">>, []) of
+        [_] ->
+            <<"<object", Obj/binary>>;
+        [Before, After] ->
+            case binary:split(Before, <<"http">>, []) of
+                [_] ->
+                    <<"<object", Obj/binary>>;
+                [_, RawUrl] ->
+                    case binary:split(RawUrl, <<"\"">>, []) of
+                        [_] ->
+                            <<"<object", Obj/binary>>;
+                        [StrippedUrl, _] ->
+                            ["\nVideo: http", StrippedUrl, After, "\n"]
+                    end
+            end
+    end.
+
+extract_href(Bin) ->
+    case binary:split(Bin, <<"<a href=\"">>, [global]) of
+        [_] ->
+            Bin;
+        [First | Hrefs] ->
+            iolist_to_binary([First | lists:map(fun href/1, Hrefs)])
+    end.
+
+href(Href) ->
+    case binary:split(Href, <<"\"">>, []) of
+        [_] ->
+            <<"<a href=\"", Href/binary>>;
+        [Link, After] ->
+            case binary:split(After, <<">">>, []) of
+                [_] ->
+                    <<"<a href=\"", Href/binary>>;
+                [_XX, RawName] ->
+                    case binary:split(RawName, <<"</a>">>, []) of
+                        [_] ->
+                            <<"<a href=\"", Href/binary>>;
+                        [Name, _] ->
+                             ["\nLink: ", Name, ": ", Link, "\n"]
+                    end
+            end
+    end.
+
+extract_img(Bin) ->
+    case binary:split(Bin, <<"<img src=\"">>, [global]) of
+        [_] ->
+            Bin;
+        [First | Imgs] ->
+            iolist_to_binary([First | lists:map(fun img/1, Imgs)])
+    end.
+
+img(Img) ->
+    case binary:split(Img, <<"\"">>, []) of
+        [_] ->
+            <<"<img src=\"", Img/binary>>;
+        [Link, _After] ->
+            ["\nBild: ", Link, "\n"]
+    end.
+
+extract_iframe(Bin) ->
+    case binary:split(Bin, <<"<iframe src=\"">>, [global]) of
+        [_] ->
+            Bin;
+        [First | Iframes] ->
+            iolist_to_binary([First | lists:map(fun iframe/1, Iframes)])
+    end.
+
+iframe(Iframe) ->
+    case binary:split(Iframe, <<"\"">>, []) of
+        [_] ->
+            <<"<iframe src=\"", Iframe/binary>>;
+        [Link, _After] ->
+            ["\nBild: ", Link, "\n"]
     end.

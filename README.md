@@ -8,7 +8,7 @@ Hör av dig till `forsguiden@kkss.se`!
 Bakgrund
 --------
 
-Siten forsguiden.com dog 2004. R.I.P.
+Siten forsguiden.com dog 2014. R.I.P.
 
 Den anlitade ISP:n, Surftown (www.surftown.com), hade supit bort hela siten. Databasen, alla bilder, kartor och videos var borta. Allt försvann. Av någon outgrundlig anledning fanns inte ens våra filer i deras backupsystem. Utan att överdriva skulle man kunna kalla Surftown för en oseriös ISP. Sjukt oseriös.
 
